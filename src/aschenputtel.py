@@ -164,7 +164,7 @@ async def count(ctx):
         async for m in logs:
             emojis = [(e,1) for e in regex.findall(m.content) if e in serverEmojis]
             if countReactions:
-                emojis += [(r.emoji.id,r.count) for r in m.reactions if r.custom_emoji]
+                emojis += [(r.emoji.id,r.count) for r in m.reactions if r.custom_emoji and r.emoji.id in serverEmojis]
             for i,c in emojis:
                 e,old = serverEmojis[i]
                 serverEmojis[e.id] = (e,old+c)
