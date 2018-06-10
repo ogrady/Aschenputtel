@@ -9,7 +9,7 @@ setup(name='Aschenputtel',
       author='Len',
       author_email='',
       license='MIT',
-      packages=['asschenputtel'],
+      # packages=['aschenputtel'],
       install_requires=[
           'discord',
           'requests'
