@@ -52,7 +52,7 @@ class Config(object):
                 v = v[t]
             return v
         except KeyError:
-            log("tried to access invalid path in config file: '%s'" % (path,))
+            log("Tried to access invalid path in config file: '%s'" % (path,))
             return None
 
 config = Config(CONFIG_FILE)
@@ -62,11 +62,6 @@ def log(message):
     print("%s: %s" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message))
 
 def find_by_name(name, seq):
-    '''
-    @name: name to compare to the name attribute of each element in seq
-    @seq: sequence of elements to search through
-    @returns: the first element where the name attribute equals the passed name
-    '''
     return discord.utils.find(lambda e: e.name == name, seq)
     
 def get_channel(name, ctx):
@@ -77,7 +72,7 @@ def get_role(name, ctx):
     
 def can_execute(member):
     if "%s#%s" % (member.name, member.discriminator) == config.get("owner"):
-        log("permission bypass by owner, please blank out this entry in your config asap.")
+        log("Permission bypass by owner, please blank out this entry in your config asap.")
         return True
     command = inspect.stack()[1][3]
     allowed = member.id in config.get("permissions/commands/%s/users" % (command,)) #config["permissions"]["commands"]["command"]["users"]
@@ -175,12 +170,12 @@ async def count(ctx):
                 e,old = serverEmojis[i]
                 serverEmojis[e.id] = (e,old+c)
                 
-    await bot.say("Emojis usage since `%s`:\n %s" % (after, "\n".join(["%s: %s" % (e,c) for e,c in serverEmojis.values()])))
+    await bot.say("Emojis usage since `%s`:\n%s" % (after, "\n".join(["%s: %s" % (e,c) for e,c in serverEmojis.values()])))
 
 try:
     token = config.get("token")
     if not token:
-        log("You have to procide a valid token in the config file.")
+        log("You have to provide a valid token in the config file.")
         exit(1)
     else:
         bot.run(token)
