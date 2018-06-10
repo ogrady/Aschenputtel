@@ -9,7 +9,7 @@ from discord.ext import commands
 from datetime import datetime
 
 CONFIG_FILE = "config.json"
-CHARACTER_LIMIT = 150
+CHARACTER_LIMIT = 300
 
 class Config(object):
     default = {
