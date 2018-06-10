@@ -9,6 +9,8 @@ from discord.ext import commands
 from datetime import datetime
 
 CONFIG_FILE = "config.json"
+CHARACTER_LIMIT = 150
+
 class Config(object):
     default = {
         "token": "",
@@ -83,6 +85,20 @@ def can_execute(member):
 
 def raw_cmd_string(message):
     return message[(len(config.get("command_prefix")) + len(inspect.stack()[1][3]) + 1):]
+    
+async def say_safe(message):
+    if len(message) <= CHARACTER_LIMIT:
+        await bot.say(message)
+    else:
+        tokens = message.split("\n")
+        while tokens:
+            currentMessage = ""
+            while tokens and (len(currentMessage) + len(tokens[0]) < CHARACTER_LIMIT):
+                currentMessage += "\n%s" % (tokens.pop(0),)
+            if not currentMessage:
+                raise Exception("Could not break message of length %s into smaller messages. Are there enough linebreaks in the original message?" % (len(message),))
+            await bot.say(currentMessage)
+    
     
 @bot.event
 async def on_ready():
@@ -169,7 +185,10 @@ async def count(ctx):
                 e,old = serverEmojis[i]
                 serverEmojis[e.id] = (e,old+c)
                 
-    await bot.say("Emojis usage since `%s`:\n%s" % (after, "\n".join(["%s: %s" % (e,c) for e,c in serverEmojis.values()])))
+    mes = "Emojis usage since `%s`:\n%s" % (after, "\n".join(["%s: %s" % (e,c) for e,c in serverEmojis.values()]))
+    log(mes)
+    await say_safe(mes)
+    # await bot.say(mes)
 
 try:
     token = config.get("token")
