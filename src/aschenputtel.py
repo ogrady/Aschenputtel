@@ -1,7 +1,6 @@
 import discord
 import requests
 import traceback
-import schedule
 import json
 import inspect
 import re
