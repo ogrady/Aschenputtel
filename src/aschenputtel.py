@@ -4,6 +4,8 @@ import traceback
 import json
 import inspect
 import re
+import sqlite3
+import time
 
 from discord.ext import commands
 from datetime import datetime
@@ -11,21 +13,33 @@ from datetime import datetime
 CONFIG_FILE = "config.json"
 CHARACTER_LIMIT = 300
 
+def log(message):
+    print("%s: %s" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message))
+
 class Config(object):
     default = {
         "token": "",
         "command_prefix": ".",
         "owner": "", # this user (format: User#1234) can execute all commands and is mainly used for more convenient bootstrapping. You should make this a blank entry once permissions are set properly
-        "permissions": {
-            "commands": {
-                "count": {
-                    "roles": [],
-                    "users": []
-                },
-                "allow": {
+        "commands": {
+            "count": {
+                "permissions": {
                     "roles": [],
                     "users": []
                 }
+            },
+            "allow": {
+                "permissions": {
+                    "roles": [],
+                    "users": []
+                }
+            },
+            "taggeth": {
+                "permissions": {
+                    "roles": [],
+                    "users": []
+                },
+                "log_text": False
             }
         }
     }
@@ -57,10 +71,55 @@ class Config(object):
             return None
 
 config = Config(CONFIG_FILE)
-bot = commands.Bot(command_prefix=config.get("command_prefix"), description='Aschenputtel Emoji Counter')
+            
+class Database(object):
+    def __init__(self, db):
+        self.connection = sqlite3.connect(db)
+        
+        c = self.connection.cursor()
+        c.execute("""
+            SELECT name
+            FROM sqlite_master
+            WHERE type='table' AND name=?""", ("deletions",))
+        if not c.fetchone():
+            self._initSchema()
+        
+    def _initSchema(self):
+        c = self.connection.cursor()
+        c.executescript("""
+            CREATE TABLE deletions(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER,
+                timestamp INTEGER,
+                message TEXT
+            );
+            CREATE TABLE mention_types(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT
+            );
+            CREATE TABLE mentions(
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                deletion_id INTEGER REFERENCES deletions(id),
+                mentioned_id INTEGER,
+                mentioned_type TEXT REFERENCES mention_types(name)
+            );
+            INSERT INTO mention_types(name) VALUES ('user'),('role');
+            """)
+        self.connection.commit()
+        log("Initialised database.")
+            
+    def insertDeletion(self, mes):
+        c = self.connection.cursor()
+        c.execute("INSERT INTO deletions(user_id, timestamp, message) VALUES(?,?,?)"
+                  , (mes.author.id, int(time.mktime(mes.timestamp.timetuple())), mes.content if config.get("commands/taggeth/log_text") else None))
+        did = c.execute("SELECT last_insert_rowid()").fetchone()[0]
+        for m in [(did, m.id, "user") for m in mes.mentions] + [(did, m.id, "role") for m in mes.role_mentions]:
+            c.execute("INSERT INTO mentions(deletion_id, mentioned_id, mentioned_type) VALUES(?,?,?)", m)
+        self.connection.commit()
+        c.close()
 
-def log(message):
-    print("%s: %s" % (datetime.now().strftime("%Y-%m-%d %H:%M:%S"), message))
+db = Database("ashbowl.db")
+bot = commands.Bot(command_prefix=config.get("command_prefix"), description='Aschenputtel Emoji Counter')
 
 def find_by_name(name, seq):
     return discord.utils.find(lambda e: e.name == name, seq)
@@ -76,10 +135,10 @@ def can_execute(member):
         log("Permission bypass by owner, please blank out this entry in your config asap.")
         return True
     command = inspect.stack()[1][3]
-    allowed = member.id in config.get("permissions/commands/%s/users" % (command,)) #config["permissions"]["commands"]["command"]["users"]
+    allowed = member.id in config.get("commands/%s/permissions/users" % (command,)) #config["permissions"]["commands"]["command"]["users"]
     i = 0
     while not allowed and i < len(member.roles):
-        allowed = member.roles[i].id in config.get("permissions/commands/%s/roles" % (command,)) # config["permissions"]["commands"]["command"]["roles"]
+        allowed = member.roles[i].id in config.get("commands/%s/permissions/roles" % (command,)) # config["permissions"]["commands"]["command"]["roles"]
         i += 1
     return allowed
 
@@ -102,7 +161,7 @@ async def say_safe(message):
     
 @bot.event
 async def on_ready():
-    print("Logged in as %s" % (bot.user.name,))
+    log("Logged in as %s." % (bot.user.name,))
 
 @bot.command(pass_context=True)
 async def allow(ctx):
@@ -120,7 +179,7 @@ async def allow(ctx):
     
     role = get_role(userOrGroup, ctx)
     if role:
-        rs = config.get("permissions/commands/%s/roles" % (command,))
+        rs = config.get("commands/%s/permissions/roles" % (command,))
         if give:
             if not role.id in rs:
                 rs.append(role.id)
@@ -134,7 +193,7 @@ async def allow(ctx):
     else:
         user = ctx.message.channel.server.get_member_named(userOrGroup)
         if user:
-            us = config.get("permissions/commands/%s/users" % (command,))
+            us = config.get("commands/%s/permissions/users" % (command,))
             if give:
                 if not user.id in us:
                     us.append(user.id)
@@ -189,6 +248,11 @@ async def count(ctx):
     log(mes)
     await say_safe(mes)
     # await bot.say(mes)
+    
+@bot.event
+async def on_message_delete(mes):
+    if mes and (mes.mentions or mes.role_mentions):
+        db.insertDeletion(mes)
 
 try:
     token = config.get("token")
@@ -197,7 +261,6 @@ try:
         exit(1)
     else:
         bot.run(token)
-        
 except:
     log("Top level error!")
     traceback.print_exc()
