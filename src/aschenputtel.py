@@ -41,24 +41,27 @@ class Config(object):
                 },
                 "log_text": False
             }
+        },
+        "autoreply_user": { # format: username: reply string
+
         }
     }
-    
+
     def __init__(self, jsonFile):
         try:
             self.values = self.readFromFile(jsonFile)
         except FileNotFoundError:
             self.values = Config.default
             self.writeToFile(jsonFile)
-        
+
     def writeToFile(self, jsonFile):
         with open(jsonFile, 'w') as f:
             f.write(json.dumps(self.values))
-    
+
     def readFromFile(self, jsonfile):
         with open(jsonfile, 'r') as f:
             return json.load(f)
-            
+
     def get(self, path):
         try:
             tokens = path.split("/")
@@ -71,11 +74,11 @@ class Config(object):
             return None
 
 config = Config(CONFIG_FILE)
-            
+
 class Database(object):
     def __init__(self, db):
         self.connection = sqlite3.connect(db)
-        
+
         c = self.connection.cursor()
         c.execute("""
             SELECT name
@@ -83,7 +86,7 @@ class Database(object):
             WHERE type='table' AND name=?""", ("deletions",))
         if not c.fetchone():
             self._initSchema()
-        
+
     def _initSchema(self):
         c = self.connection.cursor()
         c.executescript("""
@@ -107,7 +110,7 @@ class Database(object):
             """)
         self.connection.commit()
         log("Initialised database.")
-            
+
     def insertDeletion(self, mes):
         c = self.connection.cursor()
         c.execute("INSERT INTO deletions(user_id, timestamp, message) VALUES(?,?,?)"
@@ -123,13 +126,13 @@ bot = commands.Bot(command_prefix=config.get("command_prefix"), description='Asc
 
 def find_by_name(name, seq):
     return discord.utils.find(lambda e: e.name == name, seq)
-    
+
 def get_channel(name, ctx):
     return find_by_name(name, ctx.message.channel.server.channels)
-    
+
 def get_role(name, ctx):
     return find_by_name(name, ctx.message.channel.server.roles)
-    
+
 def can_execute(member):
     if "%s#%s" % (member.name, member.discriminator) == config.get("owner"):
         log("Permission bypass by owner, please blank out this entry in your config asap.")
@@ -144,7 +147,7 @@ def can_execute(member):
 
 def raw_cmd_string(message):
     return message[(len(config.get("command_prefix")) + len(inspect.stack()[1][3]) + 1):]
-    
+
 async def say_safe(message):
     if len(message) <= CHARACTER_LIMIT:
         await bot.say(message)
@@ -157,8 +160,8 @@ async def say_safe(message):
             if not currentMessage:
                 raise Exception("Could not break message of length %s into smaller messages. Are there enough linebreaks in the original message?" % (len(message),))
             await bot.say(currentMessage)
-    
-    
+
+
 @bot.event
 async def on_ready():
     log("Logged in as %s." % (bot.user.name,))
@@ -167,7 +170,7 @@ async def on_ready():
 async def allow(ctx):
     if not can_execute(ctx.message.author):
         return
-    
+
     tokens = raw_cmd_string(ctx.message.content).split(" ")
     if len(tokens) < 3 or tokens[0] not in ("true", "false"):
         await bot.say("I need \n(1) `true` to give permission or `false` to remove it, \n(2) a commandname (without the prefix) and \n(3) a rolename or username for this command. Roles have precendence over users with the same name.")
@@ -176,7 +179,7 @@ async def allow(ctx):
     give = tokens[0] == "true"
     command = tokens[1]
     userOrGroup = " ".join(tokens[2:])
-    
+
     role = get_role(userOrGroup, ctx)
     if role:
         rs = config.get("commands/%s/permissions/roles" % (command,))
@@ -189,7 +192,7 @@ async def allow(ctx):
                 rs.remove(role.id)
             await bot.say("The role '%s' can no longer execute the command `%s`." % (role, command))
         config.writeToFile(CONFIG_FILE)
-        
+
     else:
         user = ctx.message.channel.server.get_member_named(userOrGroup)
         if user:
@@ -210,18 +213,18 @@ async def allow(ctx):
 async def count(ctx):
     if not can_execute(ctx.message.author):
         return
-    
+
     tokens = raw_cmd_string(ctx.message.content).split(" ")
     if len(tokens) < 3:
         await bot.say("I need \n(1) a datetime, \n(2) a boolean to indicate whether reactions should be counted as well and \n(3...) at least one channel name as parameters for this command.")
         return
-        
+
     try:
         after = datetime.strptime(tokens[0], '%Y-%m-%d')
     except ValueError:
         await bot.say("First parameter must be a valid timezone-naive datetime representing UTC time of format `yyyy-mm-dd`.")
         return
-        
+
     if tokens[1] not in ("true", "false"):
         await bot.say("Second parameter must either be `false` to only count emojis in messages or `true` to also count reactions .")
         return
@@ -231,7 +234,7 @@ async def count(ctx):
     if not channels:
         await bot.say("Not a single channel you gave me exists on this server: '`%s`'." % (", ".join(tokens[2:]),))
         return
-        
+
     serverEmojis = dict((e.id, (e,0)) for e in ctx.message.channel.server.emojis)
     regex = re.compile("<:\w+:(\d+)>")
     for c in channels:
@@ -243,16 +246,24 @@ async def count(ctx):
             for i,c in emojis:
                 e,old = serverEmojis[i]
                 serverEmojis[e.id] = (e,old+c)
-                
+
     mes = "Emojis usage since `%s`:\n%s" % (after, "\n".join(["%s: %s" % (e,c) for e,c in serverEmojis.values()]))
     log(mes)
     await say_safe(mes)
     # await bot.say(mes)
-    
+
 @bot.event
 async def on_message_delete(mes):
     if mes and (mes.mentions or mes.role_mentions):
         db.insertDeletion(mes)
+
+@bot.event
+async def on_message(mes):
+    name = mes.author.display_name
+    if name in config.get("autoreply_user"):
+        text = config.get("autoreply_user/%s" % (name,))
+        await bot.send_message(mes.channel, text)
+        log("Replied '%s' to %s." % (text,name))
 
 try:
     token = config.get("token")
@@ -264,5 +275,3 @@ try:
 except:
     log("Top level error!")
     traceback.print_exc()
-
-
