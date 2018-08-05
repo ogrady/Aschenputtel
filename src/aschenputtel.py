@@ -215,8 +215,8 @@ async def count(ctx):
         return
 
     tokens = raw_cmd_string(ctx.message.content).split(" ")
-    if len(tokens) < 3:
-        await bot.say("I need \n(1) a datetime, \n(2) a boolean to indicate whether reactions should be counted as well and \n(3...) at least one channel name as parameters for this command.")
+    if len(tokens) < 2:
+        await bot.say("I need \n(1) a datetime, \n(2) a boolean to indicate whether reactions should be counted as well and \n(3...) at one or more channel names as parameters for this command. If no channel is passed, all accessible channel are used instead.")
         return
 
     try:
@@ -230,22 +230,28 @@ async def count(ctx):
         return
     countReactions = tokens[1] == "true"
 
-    channels = list(filter(lambda x: x, [get_channel(c, ctx) for c in tokens[2:]]))
-    if not channels:
-        await bot.say("Not a single channel you gave me exists on this server: '`%s`'." % (", ".join(tokens[2:]),))
-        return
+    if len(tokens) >= 3:
+        channels = list(filter(lambda x: x, [get_channel(c, ctx) for c in tokens[2:]]))
+        if not channels:
+            await bot.say("Not a single channel you gave me exists on this server: '`%s`'." % (", ".join(tokens[2:]),))
+            return
+    else:
+        channels = ctx.message.server.channels
 
     serverEmojis = dict((e.id, (e,0)) for e in ctx.message.channel.server.emojis)
     regex = re.compile("<:\w+:(\d+)>")
     for c in channels:
-        logs = bot.logs_from(c, after = after, limit = 1000000000) #hue
-        async for m in logs:
-            emojis = [(e,1) for e in regex.findall(m.content) if e in serverEmojis]
-            if countReactions:
-                emojis += [(r.emoji.id,r.count) for r in m.reactions if r.custom_emoji and r.emoji.id in serverEmojis]
-            for i,c in emojis:
-                e,old = serverEmojis[i]
-                serverEmojis[e.id] = (e,old+c)
+        try:
+            logs = bot.logs_from(c, after = after, limit = 1000000000) #hue
+            async for m in logs:
+                emojis = [(e,1) for e in regex.findall(m.content) if e in serverEmojis]
+                if countReactions:
+                    emojis += [(r.emoji.id,r.count) for r in m.reactions if r.custom_emoji and r.emoji.id in serverEmojis]
+                for i,c in emojis:
+                    e,old = serverEmojis[i]
+                    serverEmojis[e.id] = (e,old+c)
+        except discord.errors.Forbidden:
+            log("Skipping channel '%s' due to lack of access permission." % (c.name,))
 
     
     # serverEmojis = sorted(serverEmojis.items(), key=lambda kv: kv[1], reverse = True)
