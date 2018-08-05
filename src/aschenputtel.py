@@ -247,7 +247,11 @@ async def count(ctx):
                 e,old = serverEmojis[i]
                 serverEmojis[e.id] = (e,old+c)
 
-    mes = "Emojis usage since `%s`:\n%s" % (after, "\n".join(["%s: %s" % (e,c) for e,c in serverEmojis.values()]))
+    
+    # serverEmojis = sorted(serverEmojis.items(), key=lambda kv: kv[1], reverse = True)
+    serverEmojis = sorted(serverEmojis.values(), key=lambda kv: kv[1], reverse=True)
+
+    mes = "Emojis usage since `%s`:\n%s" % (after, "\n".join(["%s: %s" % (e,c) for e,c in serverEmojis]))
     log(mes)
     await say_safe(mes)
     # await bot.say(mes)
@@ -264,6 +268,7 @@ async def on_message(mes):
         text = config.get("autoreply_user/%s" % (name,))
         await bot.send_message(mes.channel, text)
         log("Replied '%s' to %s." % (text,name))
+    await bot.process_commands(mes)
 
 try:
     token = config.get("token")
